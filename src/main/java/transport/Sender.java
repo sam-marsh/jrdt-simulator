@@ -1,5 +1,11 @@
 package transport;
 
+/**
+ * A network host which sends data to a receiver
+ * using a reliable stop-and-wait transfer protocol.
+ *
+ * @author 153728
+ */
 public class Sender extends NetworkHost {
 
     /**
@@ -114,27 +120,65 @@ public class Sender extends NetworkHost {
     }
 
     /**
-     *
+     * Describes the state where this host is awaiting an acknowledgement
+     * packet from the receiver for a packet that this host has sent.
      */
     private class WaitForAcknowledgementPacket implements SenderEventHandler {
 
+        /**
+         * The sequence number of the packet sent. This should match the
+         * ACK number from the receiver.
+         */
         private final int seq;
+
+        /**
+         * The packet sent, for convenience - to resend through the network
+         * upon timeout if required.
+         */
         private final Packet packet;
 
+        /**
+         * Creates a new instance of this event handler to await receipt of a
+         * sent packet from the receiver.
+         *
+         * @param seq the sequence number of the packet sent
+         * @param packet the packet sent
+         */
         public WaitForAcknowledgementPacket(int seq, Packet packet) {
             this.seq = seq;
             this.packet = packet;
         }
 
+        /**
+         * Handles an incoming packet from the receiver.
+         *
+         * @param packet the received packet
+         * @return the state to transition into next - the same state if the packet
+         * is wrong/corrupt, or the application message waiting state if the correct
+         * acknowledgement is received.
+         */
         @Override
         public SenderEventHandler input(Packet packet) {
+            //check if received packet is 'wrong' - i.e. is corrupt or
+            //is an acknowledgement of the wrong packet
             if (Checksum.corrupt(packet) || packet.getAcknum() != seq) {
+                //if so, ignore and stay in same state - wait for another packet
+                //or for the timer to expire
                 return this;
             }
+            //received a valid ACK - stop the timer and transition to the application
+            //message waiting state (with an alternating sequence number 1 -> 0, 0 -> 1)
             stopTimer();
             return new WaitForApplicationMessage((seq + 1) % 2);
         }
 
+        /**
+         * Handles a timeout - if this is called it means that we have not received
+         * a valid acknowledgement from the receiver for the current packet within
+         * a certain time frame, and we need to resend the packet.
+         *
+         * @return the same state - continue to wait for the same packet
+         */
         @Override
         public SenderEventHandler timerInterrupt() {
             udtSend(packet);
@@ -144,16 +188,42 @@ public class Sender extends NetworkHost {
 
     }
 
+    /**
+     * Provides responses to network events. Acts as a state in a
+     * finite-state machine, where each event handler can respond
+     * to network events in different ways. The returned value from
+     * each method is the state to transition to after handling the event.
+     * By default, if an event handler is not implemented by a subclass,
+     * the handler will do nothing and return the same state.
+     */
     private interface SenderEventHandler {
 
+        /**
+         * Called upon receiving a message from the application layer.
+         *
+         * @param message the message to send through the network
+         * @return the state to transition after handling the event
+         */
         default SenderEventHandler output(Message message) {
             return this;
         }
 
+        /**
+         * Called upon receiving a packet from the network layer.
+         *
+         * @param packet the received packet
+         * @return the state to transition after handling the event
+         */
         default SenderEventHandler input(Packet packet) {
             return this;
         }
 
+        /**
+         * Called upon timer expiration.
+         *
+         * @see #startTimer(double)
+         * @return the state to transition after handling the event
+         */
         default SenderEventHandler timerInterrupt() {
             return this;
         }
