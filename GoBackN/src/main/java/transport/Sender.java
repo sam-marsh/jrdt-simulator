@@ -43,9 +43,6 @@ public class Sender extends NetworkHost {
                 startTimer(TIMER_LENGTH);
             }
             ++nextSeqNum;
-        } else {
-            System.err.print("REFUSING DATA");
-            //TODO refuse data?
         }
     }
 
