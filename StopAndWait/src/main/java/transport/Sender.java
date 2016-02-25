@@ -1,8 +1,7 @@
 package transport;
 
 /**
- * A network host which sends data to a receiver using a reliable stop-and-wait
- * transfer protocol.
+ * A network host which sends data to a receiver using a reliable stop-and-wait transfer protocol.
  *
  * @author 153728
  */
@@ -14,21 +13,19 @@ public class Sender extends NetworkHost {
     private static final int TIMER_LENGTH = 40;
 
     /**
-     * The current state of this finite-state machine. The two possible
-     * states are waiting for a message from the application layer, and
-     * waiting for an acknowledgement packet from the receiver host.
+     * The current state of this finite-state machine. The two possible states are waiting for a message from the
+     * application layer, and waiting for an acknowledgement packet from the receiver host.
      */
     private SenderState state;
 
     /**
-     * The sequence number of the packet currently being sent through the
-     * network.
+     * The sequence number of the packet currently being sent through the network.
      */
     private int seq;
 
     /**
-     * The packet currently being sent through the network. Stored in a field
-     * so that upon timeout the packet can be re-sent to the receiver.
+     * The packet currently being sent through the network. Stored in a field so that upon timeout the packet can be
+     * re-sent to the receiver.
      */
     private Packet sendPacket;
 
@@ -40,9 +37,8 @@ public class Sender extends NetworkHost {
     }
 
     /**
-     * Callback function which initialises the state of the sender.
-     * The sender initially waits for a message from the application
-     * layer. The initial sequence number is zero.
+     * Callback function which initialises the state of the sender. The sender initially waits for a message from the
+     * application layer. The initial sequence number is zero.
      */
     @Override
     public void init() {
@@ -52,18 +48,16 @@ public class Sender extends NetworkHost {
     }
 
     /**
-     * Handles reliable transport of an application message through
-     * the network to a receiving host. Note: this implementation ignores
-     * application messages while awaiting acknowledgement from the receiver for
-     * the last packet sent.
+     * Handles reliable transport of an application message through the network to a receiving host. Note: this
+     * implementation ignores application messages while awaiting acknowledgement from the receiver for the last
+     * packet sent.
      *
      * @param message the message to send
      */
     @Override
     public void output(Message message) {
         if (state != SenderState.WAIT_MSG) {
-            //if we're currently in the middle of sending another packet,
-            //throw away the message
+            //if we're currently in the middle of sending another packet, throw away the message
             return;
         }
 
@@ -75,16 +69,15 @@ public class Sender extends NetworkHost {
         udtSend(sendPacket);
         startTimer(TIMER_LENGTH);
 
-        //transition to the next state, which waits until acknowledgement
-        //is received from the client or until the above timer expires
+        //transition to the next state, which waits until acknowledgement is received from the client or until the
+        // above timer expires
         state = SenderState.WAIT_ACK;
     }
 
     /**
-     * Handles a new incoming packet. The packet is ignored if currently in the
-     * {@link SenderState#WAIT_MSG} state or if the packet is corrupt/is an
-     * acknowledgement for a previous packet. Otherwise, this sender will prepare
-     * for the next message from the application layer.
+     * Handles a new incoming packet. The packet is ignored if currently in the {@link SenderState#WAIT_MSG} state or
+     * if the packet is corrupt/is an acknowledgement for a previous packet. Otherwise, this sender will prepare for
+     * the next message from the application layer.
      *
      * @param packet the received packet
      */
@@ -95,25 +88,22 @@ public class Sender extends NetworkHost {
             return;
         }
 
-        //check if received packet is 'wrong' - i.e. is corrupt or
-        //is an acknowledgement of the wrong packet
+        //check if received packet is 'wrong' - i.e. is corrupt or is an acknowledgement of the wrong packet
         if (Checksum.corrupt(packet) || packet.getAcknum() != seq) {
-            //if so, ignore and stay in same state - wait for another packet
-            //or for the timer to expire
+            //if so, ignore and stay in same state - wait for another packet or for the timer to expire
             return;
         }
 
-        //received a valid ACK - stop the timer and transition to the application
-        //message waiting state (with an alternating sequence number 1 -> 0, 0 -> 1)
+        //received a valid ACK - stop the timer and transition to the application message waiting state (with an
+        // alternating sequence number 1 -> 0, 0 -> 1)
         stopTimer();
         state = SenderState.WAIT_MSG;
         seq = (seq + 1) % 2;
     }
 
     /**
-     * Callback function which is invoked when the timer expires. This means that there has
-     * been a timeout in waiting for a response from the receiver, so we need to resend the
-     * packet.
+     * Callback function which is invoked when the timer expires. This means that there has been a timeout in waiting
+     * for a response from the receiver, so the packet is re-sent.
      */
     @Override
     public void timerInterrupt() {
