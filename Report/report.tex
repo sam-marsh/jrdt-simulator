@@ -9,10 +9,11 @@
 \usepackage{hyperref}
 \usepackage{color}
 \usepackage{titlesec}
-
+ \usepackage{url}
+ 
 \titlespacing\subsubsection{0pt}{2pt plus 4pt minus 2pt}{2pt plus 2pt minus 2pt}
 
-\newcommand{\code}{\texttt}
+\newcommand{\code}{\url}
 
 \title{\vspace{-5ex}Assignment 01}
 \author{{Reliable Data Transport \hspace{1cm} Candidate: 153728}}
@@ -25,6 +26,11 @@
 \section{Protocols}
 
 \subsection{Stop-and-Wait}
+
+\subsubsection{Sender}
+
+The stop-and-wait protocol is implemented using a finite-state machine, described in the \code{Sender} class by an enum \code{SenderState} containing \code{WAIT_MSG} and \code{WAIT_ACK}. In the \code{WAIT_MSG} state, the sender waits for a message from the application layer. In the \code{WAIT_ACK} state, a packet is currently `in-transit'. That is, the sender is waiting for acknowledgement from the receiver.
+
 
 \subsection{Go-Back-N}
 
