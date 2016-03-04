@@ -1,13 +1,5 @@
 package transport;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.util.ArrayDeque;
-import java.util.Queue;
-
 /**
  * A network host which sends data to a receiver
  * using a reliable stop-and-wait transfer protocol.
@@ -22,12 +14,20 @@ public class Sender extends NetworkHost {
     private static final int TIMER_LENGTH = 100;
 
     /**
-     * The number of consecutive unacknowledged packets allowed.
+     * The size of the packet buffer. When {@link #WINDOW_SIZE} packets are waiting for acknowledgement
+     * from the receiver, there are a further available {@code BUFFER_SIZE - WINDOW_SIZE - 1} slots
+     * available for buffering messages from the application layer. After these slots are filled, any
+     * further messages from the application layer will cause an exception to be thrown.
      */
-    private static final int WINDOW_SIZE = 2;
+    private static final int BUFFER_SIZE = 50;
 
     /**
-     * The index of the start of the window.
+     * The number of consecutive unacknowledged packets allowed to be in transit at one time.
+     */
+    private static final int WINDOW_SIZE = 8;
+
+    /**
+     * The index of the start of the window in the packet buffer.
      */
     private int base;
 
@@ -37,16 +37,9 @@ public class Sender extends NetworkHost {
     private int nextSeqNum;
 
     /**
-     * A buffer for temporarily storing messages received from the application
-     * layer while the window is full so no messages can currently be sent.
+     * The packets that are currently unacknowledged as sent, awaiting a response from the receiver.
      */
-    private Queue<Message> buffer;
-
-    /**
-     * The packets that are currently unacknowledged as sent, awaiting a response
-     * from the receiver.
-     */
-    private Packet[] inFlight;
+    private Packet[] buffer;
 
     /**
      * {@inheritDoc}
@@ -55,94 +48,93 @@ public class Sender extends NetworkHost {
         super(entityName);
     }
 
-    static void setFinalStatic(Field field, Object newValue) throws Exception {
-        field.setAccessible(true);
-
-        Field modifiersField = Field.class.getDeclaredField("modifiers");
-        modifiersField.setAccessible(true);
-        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
-
-        field.set(null, newValue);
-    }
-
     @Override
     public void init() {
-
-        try {
-            setFinalStatic(System.class.getDeclaredField("out"), new PrintStream(new OutputStream() {
-                @Override
-                public void write(int b) throws IOException {
-
-                }
-            }));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
+        //set up the initial sequence number - must be same as receiver side expected value
         base = nextSeqNum = 0;
-        buffer = new ArrayDeque<>();
-        inFlight = new Packet[WINDOW_SIZE];
+        buffer = new Packet[BUFFER_SIZE];
     }
 
     @Override
     public void output(Message message) {
-        if (nextSeqNum < base + WINDOW_SIZE) {
-            sendMessage(message);
-        } else {
-            buffer.offer(message);
-            System.out.flush();
-            System.err.println("SENDER: Buffering packet " + message.getData());
-            System.err.flush();
+        //if the index of the next sequence number is directly below the window start, it means
+        // that we have run out of buffer space.
+        if (index(nextSeqNum) == index(base - 1)) {
+            throw new RuntimeException("buffer overflow");
         }
+
+        //free space in the buffer, so store it
+        buffer[index(nextSeqNum)] = makePacket(nextSeqNum, message.getData());
+
+        if (nextSeqNum < base + WINDOW_SIZE) {
+            //window has free spots - send it now as well
+            udtSend(buffer[index(nextSeqNum)]);
+            if (nextSeqNum == base) {
+                startTimer(TIMER_LENGTH);
+            }
+        }
+
+        ++nextSeqNum;
     }
 
     @Override
     public void input(Packet packet) {
+        //ignore if corrupt
         if (Checksum.corrupt(packet))
             return;
 
-        System.out.flush();
-        System.err.println("SENDER: Received ACK " + packet.getAcknum());
-        System.err.flush();
+        int newBase = packet.getAcknum() + 1;
 
-        base = packet.getAcknum() + 1;
-
-        if (nextSeqNum == base) {
-            stopTimer();
+        //step the window along one by one until we reach the new position - check for
+        // buffered packets entering the window and send them
+        while (base < newBase) {
+            Packet curr = buffer[index(base + WINDOW_SIZE)];
+            //check if a packet exists at this slot and that the sequence number is valid
+            if (curr != null && curr.getSeqnum() > newBase) {
+                udtSend(curr);
+                if (curr.getSeqnum() == newBase) {
+                    startTimer(TIMER_LENGTH);
+                }
+            }
+            ++base;
         }
 
-        while (!buffer.isEmpty() && nextSeqNum < base + WINDOW_SIZE) {
-            sendMessage(buffer.poll());
+        //finally, if all in-transit packets have now been acknowledged by the receiver,
+        // can now stop the timer
+        if (base == nextSeqNum) {
+            stopTimer();
         }
 
     }
 
     @Override
     public void timerInterrupt() {
+        //restart the timer and resend ALL packets in the window
         startTimer(TIMER_LENGTH);
-        System.out.flush();
-        System.err.println("SENDER: TIMEOUT: Resending " + base + " to " + (nextSeqNum - 1));
-        for (int i = base; i < nextSeqNum; ++i) {
-            udtSend(inFlight[index(i)]);
+        for (int i = base; i < nextSeqNum && i < base + WINDOW_SIZE; ++i) {
+            udtSend(buffer[index(i)]);
         }
     }
 
-    private void sendMessage(Message message) {
-        inFlight[index(nextSeqNum)] = makePacket(nextSeqNum, message.getData());
-        System.out.flush();
-        System.err.println("SENDER: Sending packet " + nextSeqNum);
-        System.err.flush();
-        udtSend(inFlight[index(nextSeqNum)]);
-        if (nextSeqNum == base) {
-            startTimer(TIMER_LENGTH);
-        }
-        ++nextSeqNum;
+    /**
+     * Finds the index in the buffer given a sequence number.
+     *
+     * @param seq the sequence number of the packet
+     * @return the sequence number's index in the buffer
+     */
+    private int index(int seq) {
+        //perform POSITIVE modulo arithmetic in case a negative number could be passed - e.g.
+        // when calling #index(someSeq - 1)
+        return (seq % buffer.length + buffer.length) % buffer.length;
     }
 
-    private int index(int i) {
-        return i % inFlight.length;
-    }
-
+    /**
+     * Creates a new packet and computes the checksum.
+     *
+     * @param seq the sequence number of the packet
+     * @param payload the payload of the packet
+     * @return a packet instance, with checksum calculated
+     */
     private Packet makePacket(int seq, String payload) {
         int checksum = Checksum.compute(seq, 0, payload);
         return new Packet(seq, 0, checksum, payload);
