@@ -1,8 +1,7 @@
 package transport;
 
 /**
- * A network host which sends data to a receiver
- * using a reliable stop-and-wait transfer protocol.
+ * A network host which sends data to a receiver using a reliable stop-and-wait transfer protocol.
  *
  * @author 153728
  */
@@ -11,7 +10,7 @@ public class Sender extends NetworkHost {
     /**
      * The maximum time to wait for a response after sending a packet.
      */
-    private static final int TIMER_LENGTH = 100;
+    private static final int TIMER_LENGTH = 50;
 
     /**
      * The size of the packet buffer. When {@link #WINDOW_SIZE} packets are waiting for acknowledgement
@@ -48,13 +47,25 @@ public class Sender extends NetworkHost {
         super(entityName);
     }
 
+    /**
+     * Callback function which initialises the state of the sender. The sender initially waits for a message from the
+     * application layer. The initial sequence number is 1.
+     */
     @Override
     public void init() {
         //set up the initial sequence number - must be same as receiver side expected value
-        base = nextSeqNum = 0;
+        base = nextSeqNum = 1;
         buffer = new Packet[BUFFER_SIZE];
     }
 
+    /**
+     * Handles reliable transport of an application message through the network to a receiving host. Note: this
+     * implementation buffers messages if there are more than {@link #WINDOW_SIZE} packets currently waiting
+     * for acknowledgement from the receiver. The buffer size is set by {@link #BUFFER_SIZE}, and once this buffer
+     * is full the sender will drop the packets and print a warning.
+     *
+     * @param message the message to send
+     */
     @Override
     public void output(Message message) {
         //if the index of the next sequence number is directly below the window start, it means
@@ -77,36 +88,49 @@ public class Sender extends NetworkHost {
         ++nextSeqNum;
     }
 
+    /**
+     * Handles a new incoming packet from the receiver. If this causes buffered packets to enter
+     * the sending window, they will be sent to the receiver.
+     *
+     * @param packet the received packet
+     */
     @Override
     public void input(Packet packet) {
-        //ignore if corrupt
         if (Checksum.corrupt(packet))
             return;
 
         int newBase = packet.getAcknum() + 1;
 
-        //step the window along one by one until we reach the new position - check for
-        // buffered packets entering the window and send them
-        while (base < newBase) {
-            Packet curr = buffer[index(base + WINDOW_SIZE)];
-            //check if a packet exists at this slot and that the sequence number is valid
-            if (curr != null && curr.getSeqnum() > newBase) {
-                udtSend(curr);
-                if (curr.getSeqnum() == newBase) {
-                    startTimer(TIMER_LENGTH);
-                }
-            }
-            ++base;
-        }
+        //only consider packets where the ACK is inside the current window, otherwise
+        // ignore and just wait for the timer to run out
+        if (base < newBase) {
 
-        //finally, if all in-transit packets have now been acknowledged by the receiver,
-        // can now stop the timer
-        if (base == nextSeqNum) {
+            //received a packet which will update the state, so stop the timer - may turn
+            // it on again, see below
             stopTimer();
-        }
 
+            //step the window along one by one until we reach the new position - check for
+            // buffered packets entering the window and send them
+            while (base < newBase) {
+                Packet curr = buffer[index(base + WINDOW_SIZE)];
+                //check if a packet exists at this slot and that the sequence number is valid
+                if (curr != null && curr.getSeqnum() == base) {
+                    udtSend(curr);
+                }
+                ++base;
+            }
+
+            //unless there are no packets in transit, restart the timer
+            if (base != nextSeqNum) {
+                startTimer(TIMER_LENGTH);
+            }
+        }
     }
 
+    /**
+     * Callback function which is invoked when the timer expires. This means that there has been a timeout in waiting
+     * for a response from the receiver, so all packets in the window are sent again.
+     */
     @Override
     public void timerInterrupt() {
         //restart the timer and resend ALL packets in the window

@@ -43,7 +43,7 @@ public class Checksum {
             }
         }
 
-        return total;
+        return ~total;
     }
 
     /**
