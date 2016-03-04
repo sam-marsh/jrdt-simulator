@@ -1,5 +1,8 @@
 package transport;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * A network host which sends data to a receiver using a reliable stop-and-wait transfer protocol.
  *
@@ -71,7 +74,8 @@ public class Sender extends NetworkHost {
         //if the index of the next sequence number is directly below the window start, it means
         // that we have run out of buffer space.
         if (index(nextSeqNum) == index(base - 1)) {
-            throw new RuntimeException("buffer overflow");
+            Logger.getLogger(Sender.class.getName()).log(Level.WARNING, "dropped message: {0}", message);
+            return;
         }
 
         //free space in the buffer, so store it

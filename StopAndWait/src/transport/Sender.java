@@ -1,5 +1,8 @@
 package transport;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * A network host which sends data to a receiver using a reliable stop-and-wait transfer protocol.
  *
@@ -57,7 +60,8 @@ public class Sender extends NetworkHost {
     @Override
     public void output(Message message) {
         if (state != SenderState.WAIT_MSG) {
-            //if we're currently in the middle of sending another packet, throw away the message
+            //if we're currently in the middle of sending another packet, warn and drop the message
+            Logger.getLogger(Sender.class.getName()).log(Level.WARNING, "dropped message: {0}", message);
             return;
         }
 
