@@ -33,7 +33,17 @@ public class Checksum {
      * @return the checksum of the packet
      */
     public static int compute(int seq, int ack, String payload) {
-        return (33 * seq) + (57 * ack) + (payload == null ? 0 : payload.chars().sum());
+        int total = seq + ack;
+
+        if (payload != null) {
+            //sum over integer value of characters in payload
+            char[] chars = payload.toCharArray();
+            for (char c : chars) {
+                total += c;
+            }
+        }
+
+        return total;
     }
 
     /**
