@@ -13,7 +13,7 @@ public class Sender extends NetworkHost {
     /**
      * The maximum time to wait for a response after sending a packet.
      */
-    private static final int TIMER_LENGTH = 40;
+    private static final int TIMER_LENGTH = 50;
 
     /**
      * The current state of this finite-state machine. The two possible states are waiting for a message from the
