@@ -27,15 +27,30 @@
 
 The stop-and-wait protocol is implemented using a finite-state machine, described in the \code{Sender} class by an enum \code{SenderState} containing the values \code{WAIT_MSG} and \code{WAIT_ACK}. In the \code{WAIT_MSG} state, the sender waits for a message from the application layer. In the \code{WAIT_ACK} state, a packet is currently `in-transit'. That is, the sender is waiting for acknowledgement from the receiver. An integer field \code{seq} keeps track of the current packet. Since the stop-and-wait protocol is an alternating bit protocol, \code{seq} only holds either of the values $0$ or $1$ (this is done by setting its value modulo $2$). In the \code{WAIT_MSG} state this field is used for the sequence number of the next message from the application layer. 
 
-
 \section{Go-Back-N}
+
+The Stop-and-Wait protocol is a specific case of the Go-Back-N protocol. Indeed, the Stop-and-Wait protocol can be recovered from setting the \code{WINDOW_SIZE} in the following implementation to $1$.
+
+\subsection{Sender}
 
 Upon receiving a new message from the application layer, if there is free space in the buffer, a new packet is created and stored with the message data and a sequence number of \code{nextSeqNum}. Then if the sequence number is within the window range (\code{base} $\leq$ \code{nextSeqNum} $<$ \code{base} + \code{WINDOW_SIZE}), the newly created packet is sent to the client and if the packet is the first in the window, the timer is started. In both cases, \code{nextSeqNum} is then incremented.
 
-Upon receiving a new packet from the other host, the packet is first checked to be corrupt - if it is, it is ignored and no further action is taken. Otherwise the acknowledgement number of the packet is extracted - all packets with a sequence number below or equal to this have been successfully received by the receiver. In the initial implementation, this means the base could be immediately shifted up to one more than the received acknowledgement number. However this implementation involves buffering, so the actions taken at this point had to be modified:
+Upon receiving a new packet from the other host, the packet is first checked to be corrupt - if it is, it is ignored and no further action is taken. Otherwise the acknowledgement number of the packet is extracted - all packets with a sequence number below or equal to this have been successfully received by the receiver. In the initial implementation, this means the base could be immediately shifted up to one more than the received acknowledgement number. However this implementation involves buffering, so the actions taken at this point had to be modified. If the packet's acknowledgement number is less than \code{base} then it is ignored, since it is acknowledging and already-acknowledged packet. Otherwise, the running timer is stopped. Then the window is stepped forward one slot at a time, and at each step a check is performed to see if a buffered packet at the new `end' of the window exists - if so, it is transmitted to the receiver. Finally, unless the window is now empty, the timer is restarted.
 
-The Stop-and-Wait protocol is a specific case of the Go-Back-N protocol described below. Indeed, the Stop-and-Wait protocol can be recovered from setting the \code{WINDOW_SIZE} to $1$.
+Upon a timeout, all existing packets in the window are re-sent in order to the receiver and the timer is restarted.
 
+In terms of the design of the sender implementation: the final design uses a single buffer for both storing the in-window packets and the buffered packets. The initial design instead used a separate queue of packets (\code{ArrayDeque<Packet>}) - upon a new acknowledgement packet being received and the window being moved, packets would be polled from the queue until either the queue was empty or the window was full. This was initially easier to implement, but eventually it was decided that having two separate data structures could make the implementation more bug-prone. In addition, the queue had the potential to grow unboundedly large if messages flooded in from the application layer resulting in running out of memory rather than dropping the messages. Even though this could have been prevented by keeping track of the queue size, in the end it was decided that a single array would be a less complex, neater, and less bug-prone solution.
+
+
+\subsection{Receiver}
+
+The receiver implementation is more straightforward than the sender. The sender has two fields: \code{nextSeqNum}, holding the sequence number of the next packet required from the sender, and \code{sendPacket}, holding a ready-to-send packet for acknowledging the packet with the highest in-order sequence number.
+
+After the initial setup of the fields (with \code{nextSeqNum} set to $1$), the receiver has only one state, which waits for an incoming packet. If an incoming packet is corrupt or does not have the expected sequence number, then \code{sendPacket} is transmitted through the network to notify the sender of the packets that have been successfully delivered. Otherwise, if the packet is valid the payload is delivered to the application layer, \code{sendPacket}'s acknowledgement number is set to the sequence number of the received packet and transmitted to the sender. Finally, \code{nextSeqNum} is incremented so that the receiver and the receiver now waits for the packet with this updated sequence number.
+
+\section{Other}
+
+In both protocols, the identical checksum calculation methods are used. In the \code{Checksum} class, there are methods for calculating the checksum of packet contents and for validating a packet's checksum. The technique used for calculating the checksum are similar to TCP: the sequence and acknowledgement numbers are added together, then the integer value of each character of the payload is added to this total. Finally, the bitwise NOT of the total (\code{~total}) is returned. This utility class also contains a convenience method for checking if a packet is corrupt, by calculating the checksum of the packet fields and comparing it to the value of the packet's checksum field.
 
 \end{document}
 
