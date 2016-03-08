@@ -22,9 +22,9 @@ public class Sender extends NetworkHost {
 
     /**
      * The size of the packet buffer. When {@link #WINDOW_SIZE} packets are waiting for acknowledgement
-     * from the receiver, there are a further available {@code BUFFER_SIZE - WINDOW_SIZE - 1} slots
-     * available for buffering messages from the application layer. After these slots are filled, any
-     * further messages from the application layer will cause an exception to be thrown.
+     * from the receiver, there are a further available 50 slots available for buffering messages 
+     * from the application layer. After these slots are filled, any further messages from the application 
+     * layer will cause an exception to be thrown.
      */
     private static final int BUFFER_SIZE = WINDOW_SIZE + 50 + 1;
     
