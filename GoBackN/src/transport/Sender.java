@@ -16,18 +16,18 @@ public class Sender extends NetworkHost {
     private static final int TIMER_LENGTH = 50;
 
     /**
+     * The number of consecutive unacknowledged packets allowed to be in transit at one time.
+     */
+    private static final int WINDOW_SIZE = 8;
+
+    /**
      * The size of the packet buffer. When {@link #WINDOW_SIZE} packets are waiting for acknowledgement
      * from the receiver, there are a further available {@code BUFFER_SIZE - WINDOW_SIZE - 1} slots
      * available for buffering messages from the application layer. After these slots are filled, any
      * further messages from the application layer will cause an exception to be thrown.
      */
-    private static final int BUFFER_SIZE = 50;
-
-    /**
-     * The number of consecutive unacknowledged packets allowed to be in transit at one time.
-     */
-    private static final int WINDOW_SIZE = 8;
-
+    private static final int BUFFER_SIZE = WINDOW_SIZE + 50 + 1;
+    
     /**
      * The index of the start of the window in the packet buffer.
      */
